@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Geo Master</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --primary-bg: #1a1a2e;
+            --secondary-bg: #16213e;
+            --accent-color: #0f3460;
+            --highlight-color: #e94560;
+            --text-color: #e0fbfc;
+            --green: #32de84;
+            --yellow: #ffc43d;
+            --red: #ff5e57;
+            --blue: #5372f0;
+        }
+
+        html, body {
+            height: 100%; margin: 0; padding: 0; font-family: 'Poppins', sans-serif;
+            background-color: var(--primary-bg); overflow: hidden;
+        }
+
+        #map {
+            width: 100%; height: 100%; cursor: crosshair; background-color: #a2d2ff;
+        }
+
+        .overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.7); z-index: 2000;
+            display: flex; justify-content: center; align-items: center;
+            backdrop-filter: blur(8px);
+            opacity: 0; pointer-events: none; transition: opacity 0.3s ease;
+        }
+        .overlay.visible {
+            opacity: 1; pointer-events: auto;
+        }
+
+        .modal {
+            background: var(--secondary-bg); color: var(--text-color);
+            padding: 30px 40px; border-radius: 20px; text-align: center;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            width: 90%; max-width: 500px;
+            transform: scale(0.95); transition: transform 0.3s ease;
+        }
+        .overlay.visible .modal {
+            transform: scale(1);
+        }
+        
+        .modal h1, .modal h2 { margin-top: 0; color: var(--highlight-color); }
+        .modal p { font-size: 1.1em; margin: 15px 0; line-height: 1.6; }
+        .modal strong, .modal span { font-weight: 700; color: #fff; }
+
+        .game-button {
+            width: 100%; padding: 15px; font-size: 1.2em; font-weight: 600;
+            font-family: 'Poppins', sans-serif; cursor: pointer; border: none;
+            border-radius: 12px; background-color: var(--highlight-color);
+            color: white; transition: all 0.3s; margin-top: 20px;
+        }
+        .game-button:hover { background-color: #ff6b81; transform: translateY(-3px); box-shadow: 0 4px 15px rgba(233, 69, 96, 0.4); }
+
+        #start-screen .instructions { text-align: left; font-size: 0.9em; margin: 20px 0; padding-left: 15px; border-left: 3px solid var(--blue); }
+        #difficulty-selector, #mode-selector, #time-slider-container { margin: 25px 0; }
+        .difficulty-btn, .mode-btn { flex: 1; padding: 12px; border: 2px solid var(--accent-color); background: transparent; color: var(--text-color); border-radius: 10px; cursor: pointer; transition: all 0.3s; font-size: 1em; }
+        #difficulty-selector, #mode-selector { display: flex; gap: 10px; }
+        .difficulty-btn.active, .difficulty-btn:hover, .mode-btn.active, .mode-btn:hover { background: var(--blue); border-color: var(--blue); }
+        input[type=range] { width: 100%; cursor: pointer; }
+        
+        #game-ui {
+            position: absolute; top: 15px; left: 15px; right: 15px; z-index: 1000;
+            display: flex; justify-content: space-between; align-items: center;
+            background: rgba(22, 33, 62, 0.85); backdrop-filter: blur(5px);
+            color: var(--text-color); padding: 15px 25px; border-radius: 15px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            gap: 20px; flex-wrap: wrap; transition: opacity 0.5s, transform 0.5s;
+        }
+        #game-ui.hidden { opacity: 0; transform: translateY(-20px); pointer-events: none; }
+        #prompt-container { text-align: center; flex-grow: 1; animation: popIn 0.5s ease-out; }
+        @keyframes popIn { from { opacity: 0; transform: scale(0.8); } to { opacity: 1; transform: scale(1); } }
+        #prompt-container span#city-to-find { font-size: 2em; font-weight: 700; }
+        .stat-box { text-align: center; font-size: 0.9em; }
+        .stat-box .value { font-size: 1.5em; font-weight: 600; color: #fff; }
+
+        #timer-container { width: 100%; max-width: 300px; height: 10px; background-color: rgba(0,0,0,0.3); border-radius: 5px; margin: 15px auto 0; overflow: hidden; border: 1px solid rgba(255,255,255,0.1); }
+        #timer-progress { height: 100%; width: 100%; background-color: var(--green); transition: width 1s linear, background-color 0.5s; border-radius: 5px; }
+
+        #multiple-choice-container { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 1001; display: flex; flex-direction: column; gap: 10px; width: 90%; max-width: 400px; }
+        .choice-btn { padding: 15px; background: rgba(22, 33, 62, 0.9); border: 1px solid rgba(255, 255, 255, 0.2); color: var(--text-color); border-radius: 12px; cursor: pointer; font-size: 1.1em; transition: all 0.3s; }
+        .choice-btn:not(.disabled):hover { background: var(--blue); transform: translateY(-2px); }
+        .choice-btn.correct { background-color: var(--green); color: var(--primary-bg); border-color: var(--green); }
+        .choice-btn.incorrect { background-color: var(--red); color: white; border-color: var(--red); }
+        .choice-btn.disabled { cursor: not-allowed; opacity: 0.7; }
+
+        #result-map-container { width: 100%; height: 250px; border-radius: 10px; margin-top: 20px; border: 2px solid var(--accent-color); overflow: hidden; }
+        #result-map { height: 100%; width: 100%; background-color: #333; }
+        #result-map .leaflet-control-container { display: none; }
+
+        .custom-marker-icon { border-radius: 50%; box-shadow: 0 4px 12px rgba(0,0,0,0.4); border: 3px solid white; width: 20px !important; height: 20px !important; }
+        .user-guess-icon { background-color: var(--highlight-color); }
+        .correct-answer-icon { background-color: var(--green); }
+        .round-marker-icon { background-color: var(--blue); animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(83, 114, 240, 0.7); } 70% { box-shadow: 0 0 0 15px rgba(83, 114, 240, 0); } 100% { box-shadow: 0 0 0 0 rgba(83, 114, 240, 0); } }
+
+        /* --- WATERMARK --- */
+        #watermark {
+            position: fixed;
+            bottom: 10px;
+            right: 15px;
+            z-index: 9999;
+            font-size: 12px;
+            color: var(--text-color);
+            opacity: 0.5;
+            text-decoration: none;
+            transition: opacity 0.3s ease;
+        }
+        #watermark:hover {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="map"></div>
+    <div id="multiple-choice-container"></div>
+
+    <div id="start-screen" class="overlay visible">
+        <div class="modal">
+            <h1>Geo Master</h1>
+            <p>The ultimate geography guessing game!</p>
+            <div class="instructions">
+                <strong>How to Play:</strong>
+                <ol id="instructions-list">
+                    <li>A city name will be shown.</li>
+                    <li>Click on the map where you think it is.</li>
+                    <li>The closer you are, the more points you get!</li>
+                </ol>
+            </div>
+            <strong>Select Game Mode:</strong>
+            <div id="mode-selector">
+                <button class="mode-btn active" data-mode="classic" data-instruction="<li>A city name will be shown.</li><li>Click on the map where you think it is.</li><li>The closer you are, the more points you get!</li>">Classic</button>
+                <button class="mode-btn" data-mode="reverse" data-instruction="<li>A location is pinned on the map.</li><li>Guess the correct city from four choices.</li><li>You get points for a correct guess!</li>">Reverse</button>
+            </div>
+            <strong>Select Difficulty:</strong>
+            <div id="difficulty-selector">
+                <button class="difficulty-btn active" data-difficulty="easy">Easy</button>
+                <button class="difficulty-btn" data-difficulty="medium">Medium</button>
+                <button class="difficulty-btn" data-difficulty="hard">Hard</button>
+            </div>
+            <div id="time-slider-container">
+                <strong>Time per Round: <span id="time-setting-value">15s</span></strong>
+                <input type="range" id="time-slider" min="5" max="30" step="5" value="15">
+            </div>
+            <button id="start-game-button" class="game-button">Start Game</button>
+        </div>
+    </div>
+
+    <div id="game-ui" class="hidden">
+        <div class="stat-box">Round<br><span id="round-counter" class="value">1 / 5</span></div>
+        <div id="prompt-container">
+            <span id="prompt-label">Find:</span><br><span id="city-to-find"></span>
+            <div id="timer-container"><div id="timer-progress"></div></div>
+        </div>
+        <div class="stat-box">Score<br><span id="score" class="value">0</span></div>
+        <div class="stat-box">High Score<br><span id="high-score" class="value">0</span></div>
+    </div>
+
+    <div id="result-overlay" class="overlay">
+        <div id="result-modal" class="modal">
+            <h2 id="result-title">Excellent Guess!</h2>
+            <p id="result-text"></p>
+            <div id="result-map-container"><div id="result-map"></div></div>
+            <button id="next-round-button" class="game-button">Next Round</button>
+        </div>
+    </div>
+    
+    <div id="game-over-overlay" class="overlay">
+        <div id="game-over-modal" class="modal">
+            <h1>Game Over!</h1>
+            <p>You finished all 5 rounds.</p>
+            <h2>Final Score: <strong><span id="final-score"></span></strong></h2>
+            <p id="new-high-score-msg" style="color: var(--green); font-weight: bold; display:none;">New High Score!</p>
+            <p>High Score: <strong><span id="final-high-score"></span></strong></p>
+            <button id="play-again-button" class="game-button">Play Again</button>
+        </div>
+    </div>
+    
+    <!-- Watermark Link -->
+    <a href="https://github.com/akshdeepsingh7/Geo-Master" target="_blank" id="watermark">
+        Geo-Master by akshdeepsingh7
+    </a>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+    <script>
+        const TOTAL_ROUNDS = 5;
+        const CITIES = {
+            easy: [ { name: "Paris", lat: 48.8566, lon: 2.3522 }, { name: "London", lat: 51.5074, lon: -0.1278 }, { name: "New York City", lat: 40.7128, lon: -74.0060 }, { name: "Tokyo", lat: 35.6895, lon: 139.6917 }, { name: "Sydney", lat: -33.8688, lon: 151.2093 }, { name: "Rome", lat: 41.9028, lon: 12.4964 }, { name: "Cairo", lat: 30.0444, lon: 31.2357 }, { name: "Rio de Janeiro", lat: -22.9068, lon: -43.1729 }, { name: "Beijing", lat: 39.9042, lon: 116.4074 }, { name: "Moscow", lat: 55.7558, lon: 37.6173 }, { name: "Los Angeles", lat: 34.0522, lon: -118.2437 }, { name: "Mexico City", lat: 19.4326, lon: -99.1332 }, { name: "Madrid", lat: 40.4168, lon: -3.7038 }, { name: "Berlin", lat: 52.5200, lon: 13.4050 }, { name: "Washington D.C.", lat: 38.9072, lon: -77.0369 }, { name: "New Delhi", lat: 28.6139, lon: 77.2090 }, { name: "Ottawa", lat: 45.4215, lon: -75.6972 }, { name: "Brasília", lat: -15.7942, lon: -47.8825 }, { name: "Canberra", lat: -35.2809, lon: 149.1300 }, { name: "Athens", lat: 37.9838, lon: 23.7275 } ],
+            medium: [ { name: "Istanbul", lat: 41.0082, lon: 28.9784 }, { name: "Buenos Aires", lat: -34.6037, lon: -58.3816 }, { name: "Bangkok", lat: 13.7563, lon: 100.5018 }, { name: "Seoul", lat: 37.5665, lon: 126.9780 }, { name: "Lagos", lat: 6.5244, lon: 3.3792 }, { name: "Toronto", lat: 43.6532, lon: -79.3832 }, { name: "Mumbai", lat: 19.0760, lon: 72.8777 }, { name: "Dubai", lat: 25.276987, lon: 55.296249 }, { name: "Singapore", lat: 1.3521, lon: 103.8198 }, { name: "Cape Town", lat: -33.9249, lon: 18.4241 }, { name: "Shanghai", lat: 31.2304, lon: 121.4737 }, { name: "São Paulo", lat: -23.5505, lon: -46.6333 }, { name: "Chicago", lat: 41.8781, lon: -87.6298 }, { name: "Amsterdam", lat: 52.3676, lon: 4.9041 }, { name: "Vienna", lat: 48.2082, lon: 16.3738 }, { name: "Dublin", lat: 53.3498, lon: -6.2603 }, { name: "Stockholm", lat: 59.3293, lon: 18.0686 }, { name: "Hong Kong", lat: 22.3193, lon: 114.1694 }, { name: "Jakarta", lat: -6.2088, lon: 106.8456 }, { name: "Manila", lat: 14.5995, lon: 120.9842 }, { name: "Kuala Lumpur", lat: 3.1390, lon: 101.6869 }, { name: "Johannesburg", lat: -26.2041, lon: 28.0473 }, { name: "Vancouver", lat: 49.2827, lon: -123.1207 }, { name: "San Francisco", lat: 37.7749, lon: -122.4194 }, { name: "Lisbon", lat: 38.7223, lon: -9.1393 }, { name: "Copenhagen", lat: 55.6761, lon: 12.5683 }, { name: "Brussels", lat: 50.8503, lon: 4.3517 }, { name: "Prague", lat: 50.0755, lon: 14.4378 }, { name: "Warsaw", lat: 52.2297, lon: 21.0122 }, { name: "Budapest", lat: 47.4979, lon: 19.0402 }, { name: "Havana", lat: 23.1136, lon: -82.3666 }, { name: "Jerusalem", lat: 31.7683, lon: 35.2137 }, { name: "Tehran", lat: 35.6892, lon: 51.3890 }, { name: "Riyadh", lat: 24.7136, lon: 46.6753 }, { name: "Bogotá", lat: 4.7110, lon: -74.0721 }, { name: "Santiago", lat: -33.4489, lon: -70.6693 }, { name: "Ho Chi Minh City", lat: 10.8231, lon: 106.6297 }, { "name": "Kyiv", "lat": 50.4501, "lon": 30.5234 } ],
+            hard: [ { name: "Reykjavik", lat: 64.1466, lon: -21.9426 }, { name: "Wellington", lat: -41.2865, lon: 174.7762 }, { name: "Ulaanbaatar", lat: 47.9177, lon: 106.9177 }, { name: "Kathmandu", lat: 27.7172, lon: 85.3240 }, { name: "Nairobi", lat: -1.2921, lon: 36.8219 }, { name: "Lima", lat: -12.0464, lon: -77.0428 }, { name: "Quito", lat: -0.1807, lon: -78.4678 }, { name: "Addis Ababa", lat: 9.0054, lon: 38.7636 }, { name: "Helsinki", lat: 60.1699, lon: 24.9384 }, { name: "Oslo", lat: 59.9139, lon: 10.7522 }, { name: "Baku", lat: 40.4093, lon: 49.8671 }, { name: "Astana (Nur-Sultan)", lat: 51.1694, lon: 71.4491 }, { name: "Vientiane", lat: 17.9748, lon: 102.6309 }, { name: "Tashkent", lat: 41.2995, lon: 69.2401 }, { name: "Caracas", lat: 10.4806, lon: -66.9036 }, { name: "Dakar", lat: 14.7167, lon: -17.4677 }, { name: "Accra", lat: 5.6037, lon: -0.1870 }, { name: "Phnom Penh", lat: 11.5564, lon: 104.9282 }, { name: "Hanoi", lat: 21.0285, lon: 105.8542 }, { name: "Tbilisi", lat: 41.7151, lon: 44.8271 }, { name: "Yerevan", lat: 40.1792, lon: 44.4991 }, { name: "Montevideo", lat: -34.9011, lon: -56.1645 }, { name: "La Paz", lat: -16.4897, lon: -68.1193 }, { name: "Asunción", lat: -25.2637, lon: -57.5759 }, { name: "Kinshasa", lat: -4.4419, lon: 15.2663 }, { name: "Dar es Salaam", lat: -6.7924, lon: 39.2083 }, { "name": "Almaty", "lat": 43.2220, "lon": 76.8512 }, { "name": "Anchorage", "lat": 61.2181, "lon": -149.9003 }, { "name": "Perth", "lat": -31.9523, "lon": 115.8613 }, { "name": "Christchurch", "lat": -43.5321, "lon": 172.6362 }, { "name": "Freetown", "lat": 8.4840, "lon": -13.2299 }, { "name": "Tunis", "lat": 36.8065, "lon": 10.1815 }, { "name": "Beirut", "lat": 33.8938, "lon": 35.5018 }, { "name": "Damascus", "lat": 33.5138, "lon": 36.2765 }, { "name": "Baghdad", "lat": 33.3152, "lon": 44.3661 }, { "name": "Kabul", "lat": 34.5553, "lon": 69.2075 }, { "name": "Pyongyang", "lat": 39.0392, "lon": 125.7625 }, { "name": "Thimphu", "lat": 27.4728, "lon": 89.6390 }, { "name": "Naypyidaw", "lat": 19.7633, "lon": 96.0785 }, { "name": "Bishkek", "lat": 42.8746, "lon": 74.5698 }, { "name": "Dushanbe", "lat": 38.5598, "lon": 68.7870 }, { "name": "Ashgabat", "lat": 37.9601, "lon": 58.3261 }, { "name": "Amman", "lat": 31.9454, "lon": 35.9284 }, { "name": "Sana'a", "lat": 15.3694, "lon": 44.1910 }, { "name": "Muscat", "lat": 23.5889, "lon": 58.3842 }, { "name": "Doha", "lat": 25.2854, "lon": 51.5310 }, { "name": "Manama", "lat": 26.2285, "lon": 50.5860 }, { "name": "Kuwait City", "lat": 29.3759, "lon": 47.9774 }, { "name": "Suva", "lat": -18.1416, "lon": 178.4419 }, { "name": "Port Moresby", "lat": -9.4438, "lon": 147.1803 }, { "name": "Honolulu", "lat": 21.3069, "lon": -157.8583 } ]
+        };
+        const TILE_URL_NOLABELS = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png';
+        const TILE_URL_LABELS = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+        const TILE_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
+
+        let mainMap, resultMap, currentCity, gameMode, gameDifficulty, timerInterval, highScores, roundMarker;
+        let labeledTiles, noLabelTiles, gameCities = [];
+        let score = 0, currentRound = 0, roundDuration = 15, timeLeft = 15;
+        let gameActive = false, resultMapLayers = [];
+        
+        const dom = {
+            startScreen: document.getElementById('start-screen'),
+            gameUI: document.getElementById('game-ui'),
+            resultOverlay: document.getElementById('result-overlay'),
+            gameOverOverlay: document.getElementById('game-over-overlay'),
+            modeSelector: document.getElementById('mode-selector'),
+            difficultySelector: document.getElementById('difficulty-selector'),
+            timeSlider: document.getElementById('time-slider'),
+            timeSettingValue: document.getElementById('time-setting-value'),
+            startGameButton: document.getElementById('start-game-button'),
+            nextRoundButton: document.getElementById('next-round-button'),
+            playAgainButton: document.getElementById('play-again-button'),
+            cityToFind: document.getElementById('city-to-find'),
+            score: document.getElementById('score'),
+            highScore: document.getElementById('high-score'),
+            roundCounter: document.getElementById('round-counter'),
+            timerProgress: document.getElementById('timer-progress'),
+            promptContainer: document.getElementById('prompt-container'),
+            promptLabel: document.getElementById('prompt-label'),
+            multipleChoiceContainer: document.getElementById('multiple-choice-container'),
+            instructionsList: document.getElementById('instructions-list'),
+            result: {
+                title: document.getElementById('result-title'),
+                text: document.getElementById('result-text'),
+                mapContainer: document.getElementById('result-map-container')
+            },
+            gameOver: {
+                finalScore: document.getElementById('final-score'),
+                finalHighScore: document.getElementById('final-high-score'),
+                newHighScoreMsg: document.getElementById('new-high-score-msg')
+            }
+        };
+
+        const shuffle = (array) => {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        };
+
+        function init() {
+            initMainMap();
+            loadHighScores();
+            setupEventListeners();
+        }
+
+        function initMainMap() {
+            mainMap = L.map('map', {zoomControl: false}).setView([20, 0], 2);
+            labeledTiles = L.tileLayer(TILE_URL_LABELS, { attribution: TILE_ATTRIBUTION, minZoom: 2, maxZoom: 18 });
+            noLabelTiles = L.tileLayer(TILE_URL_NOLABELS, { attribution: TILE_ATTRIBUTION, minZoom: 2, maxZoom: 18 });
+            labeledTiles.addTo(mainMap);
+            mainMap.setMaxBounds([[-90, -180], [90, 180]]);
+        }
+
+        function initResultMap() {
+            if (resultMap) return;
+            resultMap = L.map('result-map', { zoomControl: false, scrollWheelZoom: false, dragging: false, touchZoom: false, doubleClickZoom: false, attributionControl: false });
+            L.tileLayer(TILE_URL_NOLABELS, { attribution: TILE_ATTRIBUTION }).addTo(resultMap);
+        }
+
+        function loadHighScores() {
+            const storedScores = localStorage.getItem('geoMasterHighScores');
+            highScores = storedScores ? JSON.parse(storedScores) : { classic: { easy: 0, medium: 0, hard: 0 }, reverse: { easy: 0, medium: 0, hard: 0 } };
+        }
+
+        function getHighScore() { return highScores[gameMode]?.[gameDifficulty] ?? 0; }
+
+        function setHighScore() {
+            if (score > getHighScore()) {
+                if (!highScores[gameMode]) highScores[gameMode] = {};
+                highScores[gameMode][gameDifficulty] = score;
+                localStorage.setItem('geoMasterHighScores', JSON.stringify(highScores));
+                return true;
+            }
+            return false;
+        }
+
+        function setupEventListeners() {
+            dom.modeSelector.addEventListener('click', (e) => {
+                if (e.target.classList.contains('mode-btn')) {
+                    document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active'));
+                    e.target.classList.add('active');
+                    dom.instructionsList.innerHTML = e.target.dataset.instruction;
+                }
+            });
+            dom.difficultySelector.addEventListener('click', (e) => {
+                if (e.target.classList.contains('difficulty-btn')) {
+                    document.querySelectorAll('.difficulty-btn').forEach(btn => btn.classList.remove('active'));
+                    e.target.classList.add('active');
+                }
+            });
+            dom.timeSlider.addEventListener('input', () => { dom.timeSettingValue.textContent = `${dom.timeSlider.value}s`; });
+            dom.startGameButton.addEventListener('click', startGame);
+            dom.nextRoundButton.addEventListener('click', startRound);
+            dom.playAgainButton.addEventListener('click', () => {
+                dom.gameOverOverlay.classList.remove('visible');
+                dom.startScreen.classList.add('visible');
+            });
+            mainMap.on('click', handleMapClick);
+            dom.multipleChoiceContainer.addEventListener('click', handleChoiceClick);
+        }
+
+        function startGame() {
+            gameMode = document.querySelector('.mode-btn.active').dataset.mode;
+            gameDifficulty = document.querySelector('.difficulty-btn.active').dataset.difficulty;
+            roundDuration = parseInt(dom.timeSlider.value, 10);
+            score = 0; currentRound = 0;
+            
+            gameCities = shuffle([...CITIES[gameDifficulty]]);
+
+            dom.score.textContent = 0;
+            dom.highScore.textContent = getHighScore().toLocaleString();
+            dom.startScreen.classList.remove('visible');
+            dom.gameUI.classList.remove('hidden');
+            startRound();
+        }
+        
+        function startRound() {
+            resetRoundUI();
+            gameActive = true;
+            currentRound++;
+
+            if (gameCities.length === 0) gameCities = shuffle([...CITIES[gameDifficulty]]);
+            currentCity = gameCities.pop();
+
+            dom.roundCounter.textContent = `${currentRound} / ${TOTAL_ROUNDS}`;
+            dom.promptContainer.style.animation = 'none';
+            dom.promptContainer.offsetHeight;
+            dom.promptContainer.style.animation = '';
+            
+            timeLeft = roundDuration;
+            timerInterval = setInterval(updateTimer, 1000);
+            updateTimerDisplay();
+            
+            if (gameMode === 'reverse') setupReverseRound();
+            else setupClassicRound();
+        }
+
+        function setupClassicRound() {
+            if (mainMap.hasLayer(noLabelTiles)) mainMap.removeLayer(noLabelTiles);
+            if (!mainMap.hasLayer(labeledTiles)) labeledTiles.addTo(mainMap);
+
+            dom.promptLabel.textContent = "Find:";
+            dom.cityToFind.style.display = 'inline';
+            dom.cityToFind.textContent = currentCity.name;
+            mainMap.setView([20, 0], 2, {animate: true});
+        }
+
+        function setupReverseRound() {
+            if (mainMap.hasLayer(labeledTiles)) mainMap.removeLayer(labeledTiles);
+            if (!mainMap.hasLayer(noLabelTiles)) noLabelTiles.addTo(mainMap);
+            
+            dom.promptLabel.textContent = "Guess the City";
+            dom.cityToFind.style.display = 'none';
+            
+            generateMultipleChoices();
+            const markerIcon = L.divIcon({ className: 'custom-marker-icon round-marker-icon' });
+            roundMarker = L.marker([currentCity.lat, currentCity.lon], { icon: markerIcon }).addTo(mainMap);
+            mainMap.setView([currentCity.lat, currentCity.lon], 5, { animate: true });
+        }
+
+        function handleMapClick(e) {
+            if (!gameActive || gameMode !== 'classic') return;
+            endRound({ guess: e.latlng });
+        }
+
+        function handleChoiceClick(e) {
+            if (!gameActive || gameMode !== 'reverse' || !e.target.classList.contains('choice-btn')) return;
+            const chosenButton = e.target;
+            
+            document.querySelectorAll('.choice-btn').forEach(btn => {
+                btn.classList.add('disabled');
+                if(btn.dataset.correct === 'true') btn.classList.add('correct');
+            });
+            if(chosenButton.dataset.correct !== 'true') chosenButton.classList.add('incorrect');
+            
+            endRound({ choice: chosenButton.dataset.name });
+        }
+
+        function endRound(result) {
+            if (!gameActive) return;
+            gameActive = false;
+            clearInterval(timerInterval);
+
+            let roundScore = 0, distance = 0, isCorrect = false;
+
+            if (gameMode === 'classic') {
+                const actualLatLng = L.latLng(currentCity.lat, currentCity.lon);
+                if (result.guess) {
+                    distance = Math.round(actualLatLng.distanceTo(result.guess) / 1000);
+                    roundScore = Math.max(0, Math.round(5000 * Math.exp(-distance / 2000)));
+                }
+            } else if (gameMode === 'reverse') {
+                isCorrect = result.choice === currentCity.name;
+                if(isCorrect) roundScore = 5000;
+            }
+            
+            score += roundScore;
+            dom.score.textContent = score.toLocaleString();
+            
+            setTimeout(() => {
+                if (currentRound >= TOTAL_ROUNDS) endGame();
+                else showResultModal(result, distance, roundScore);
+            }, gameMode === 'reverse' ? 1200 : 0);
+        }
+
+        function endGame() {
+            dom.gameUI.classList.add('hidden');
+            dom.gameOver.finalScore.textContent = score.toLocaleString();
+            
+            const isNewHighScore = setHighScore();
+            dom.gameOver.finalHighScore.textContent = getHighScore().toLocaleString();
+            dom.gameOver.newHighScoreMsg.style.display = isNewHighScore ? 'block' : 'none';
+            dom.gameOverOverlay.classList.add('visible');
+        }
+
+        function resetRoundUI() {
+            dom.resultOverlay.classList.remove('visible');
+            dom.multipleChoiceContainer.innerHTML = '';
+            if (roundMarker) {
+                mainMap.removeLayer(roundMarker);
+                roundMarker = null;
+            }
+        }
+
+        function updateTimer() {
+            timeLeft--;
+            updateTimerDisplay();
+            if (timeLeft <= 0) {
+                if (gameMode === 'reverse') document.querySelectorAll('.choice-btn').forEach(btn => btn.classList.add('disabled'));
+                 endRound({ guess: null, choice: null });
+            }
+        }
+
+        function updateTimerDisplay() {
+            const percentage = (timeLeft / roundDuration) * 100;
+            dom.timerProgress.style.width = `${percentage}%`;
+            dom.timerProgress.style.backgroundColor = timeLeft <= (roundDuration * 0.33) ? 'var(--red)' : timeLeft <= (roundDuration * 0.66) ? 'var(--yellow)' : 'var(--green)';
+        }
+
+        function showResultModal(result, distance, roundScore) {
+            dom.result.mapContainer.style.display = 'none';
+
+            if(gameMode === 'classic') {
+                dom.result.mapContainer.style.display = 'block';
+                if (result.guess) {
+                    dom.result.title.textContent = roundScore > 4500 ? "Pinpoint Accuracy!" : roundScore > 3500 ? "Excellent Guess!" : "Not Bad!";
+                    dom.result.text.innerHTML = `You were <strong>${distance.toLocaleString()} km</strong> away and scored <strong>+${roundScore.toLocaleString()} points!</strong>`;
+                } else {
+                    dom.result.title.textContent = "Time's Up!";
+                    dom.result.text.innerHTML = `The correct location was <strong>${currentCity.name}</strong>.`;
+                }
+            } else if (gameMode === 'reverse') {
+                dom.result.mapContainer.style.display = 'block';
+                 if (result.choice && result.choice === currentCity.name) {
+                    dom.result.title.textContent = "Correct!";
+                    dom.result.text.innerHTML = `You earned <strong>+${roundScore.toLocaleString()} points!</strong>`;
+                 } else if (result.choice) {
+                    dom.result.title.textContent = "Incorrect!";
+                    dom.result.text.innerHTML = `The correct city was <strong>${currentCity.name}</strong>.`;
+                 } else {
+                    dom.result.title.textContent = "Time's Up!";
+                    dom.result.text.innerHTML = `The correct city was <strong>${currentCity.name}</strong>.`;
+                 }
+            }
+            
+            dom.resultOverlay.classList.add('visible');
+
+            setTimeout(() => {
+                initResultMap();
+                resultMapLayers.forEach(layer => resultMap.removeLayer(layer));
+                resultMapLayers = [];
+
+                const actualLatLng = L.latLng(currentCity.lat, currentCity.lon);
+                const correctIcon = L.divIcon({ className: 'custom-marker-icon correct-answer-icon' });
+                const correctMarker = L.marker(actualLatLng, { icon: correctIcon }).addTo(resultMap);
+                resultMapLayers.push(correctMarker);
+                
+                let boundsGroup = [correctMarker];
+
+                if(gameMode === 'classic' && result.guess) {
+                    const guessIcon = L.divIcon({ className: 'custom-marker-icon user-guess-icon' });
+                    const guessedMarker = L.marker(result.guess, { icon: guessIcon }).addTo(resultMap);
+                    resultMapLayers.push(guessedMarker);
+                    boundsGroup.push(guessedMarker);
+                    const line = L.polyline([actualLatLng, result.guess], { color: 'white', weight: 3, opacity: 0.9 }).addTo(resultMap);
+                    resultMapLayers.push(line);
+                }
+                
+                const group = new L.featureGroup(boundsGroup);
+                resultMap.fitBounds(group.getBounds().pad(0.25));
+            }, 10);
+        }
+
+        function generateMultipleChoices() {
+            const cityPool = CITIES[gameDifficulty].filter(c => c.name !== currentCity.name);
+            let choices = [currentCity, ...shuffle(cityPool).slice(0, 3)];
+            
+            shuffle(choices).forEach(city => {
+                const button = document.createElement('button');
+                button.className = 'choice-btn';
+                button.textContent = city.name;
+                button.dataset.name = city.name;
+                if(city.name === currentCity.name) button.dataset.correct = "true";
+                dom.multipleChoiceContainer.appendChild(button);
+            });
+        }
+        
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
