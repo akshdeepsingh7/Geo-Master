@@ -108,16 +108,6 @@ International cities and regional capitals including Istanbul, Buenos Aires, Ban
 
 ### Hard Mode Cities (50+)
 Challenging locations such as Reykjavik, Ulaanbaatar, Kathmandu, Wellington, Addis Ababa, Vientiane, and many more.
-
-## 🤝 Contributing
-
-This is an open-source project! Feel free to:
-- Report bugs or suggest improvements
-- Add new cities to the database
-- Enhance the UI/UX
-- Optimize performance
-- Add new game modes
-
 ---
 
 **Challenge yourself and become a true Geo Master! 🗺️**
