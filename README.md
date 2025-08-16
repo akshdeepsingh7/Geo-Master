@@ -108,6 +108,7 @@ International cities and regional capitals including Istanbul, Buenos Aires, Ban
 
 ### Hard Mode Cities (50+)
 Challenging locations such as Reykjavik, Ulaanbaatar, Kathmandu, Wellington, Addis Ababa, Vientiane, and many more.
+
 ---
 
 **Challenge yourself and become a true Geo Master! 🗺️**
