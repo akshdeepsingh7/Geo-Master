@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Geo Master</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --primary-bg: #1a1a2e;
+            --secondary-bg: #16213e;
+            --accent-color: #0f3460;
+            --highlight-color: #e94560;
+            --text-color: #e0fbfc;
+            --green: #32de84;
+            --yellow: #ffc43d;
+            --red: #ff5e57;
+            --blue: #5372f0;
+        }
+
+        html, body {
+            height: 100%; margin: 0; padding: 0; font-family: 'Poppins', sans-serif;
+            background-color: var(--primary-bg); overflow: hidden;
+        }
+
+        #map {
+            width: 100%; height: 100%; cursor: crosshair; background-color: #a2d2ff;
+        }
+
+        .overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.7); z-index: 2000;
+            display: flex; justify-content: center; align-items: center;
+            backdrop-filter: blur(8px);
+            opacity: 0; pointer-events: none; transition: opacity 0.3s ease;
+        }
+        .overlay.visible {
+            opacity: 1; pointer-events: auto;
+        }
+
+        .modal {
+            background: var(--secondary-bg); color: var(--text-color);
+            padding: 30px 40px; border-radius: 20px; text-align: center;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            width: 90%; max-width: 500px;
+            transform: scale(0.95); transition: transform 0.3s ease;
+        }
+        .overlay.visible .modal {
+            transform: scale(1);
+        }
+        
+        .modal h1, .modal h2 { margin-top: 0; color: var(--highlight-color); }
+        .modal p { font-size: 1.1em; margin: 15px 0; line-height: 1.6; }
+        .modal strong, .modal span { font-weight: 700; color: #fff; }
+
+        .game-button {
+            width: 100%; padding: 15px; font-size: 1.2em; font-weight: 600;
+            font-family: 'Poppins', sans-serif; cursor: pointer; border: none;
+            border-radius: 12px; background-color: var(--highlight-color);
+            color: white; transition: all 0.3s; margin-top: 20px;
+        }
+        .game-button:hover { background-color: #ff6b81; transform: translateY(-3px); box-shadow: 0 4px 15px rgba(233, 69, 96, 0.4); }
+
+        #start-screen .instructions { text-align: left; font-size: 0.9em; margin: 20px 0; padding-left: 15px; border-left: 3px solid var(--blue); }
+        #difficulty-selector, #mode-selector, #country-selector, #time-slider-container { margin: 25px 0; }
+        .difficulty-btn, .mode-btn, .country-btn { flex: 1; padding: 12px; border: 2px solid var(--accent-color); background: transparent; color: var(--text-color); border-radius: 10px; cursor: pointer; transition: all 0.3s; font-size: 1em; }
+        #difficulty-selector, #mode-selector, #country-selector { display: flex; gap: 10px; }
+        .difficulty-btn.active, .difficulty-btn:hover, .mode-btn.active, .mode-btn:hover, .country-btn.active, .country-btn:hover { background: var(--blue); border-color: var(--blue); }
+        input[type=range] { width: 100%; cursor: pointer; }
+        
+        #game-ui {
+            position: absolute; top: 15px; left: 15px; right: 15px; z-index: 1000;
+            display: flex; justify-content: space-between; align-items: center;
+            background: rgba(22, 33, 62, 0.85); backdrop-filter: blur(5px);
+            color: var(--text-color); padding: 15px 25px; border-radius: 15px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            gap: 20px; flex-wrap: wrap; transition: opacity 0.5s, transform 0.5s;
+        }
+        #game-ui.hidden { opacity: 0; transform: translateY(-20px); pointer-events: none; }
+        #prompt-container { text-align: center; flex-grow: 1; animation: popIn 0.5s ease-out; }
+        @keyframes popIn { from { opacity: 0; transform: scale(0.8); } to { opacity: 1; transform: scale(1); } }
+        #prompt-container span#city-to-find { font-size: 2em; font-weight: 700; }
+        #prompt-container.clue-mode span#city-to-find { font-size: 1.4em; font-weight: 600; line-height: 1.3; }
+        .stat-box { text-align: center; font-size: 0.9em; }
+        .stat-box .value { font-size: 1.5em; font-weight: 600; color: #fff; }
+
+        #timer-container { width: 100%; max-width: 300px; height: 10px; background-color: rgba(0,0,0,0.3); border-radius: 5px; margin: 15px auto 0; overflow: hidden; border: 1px solid rgba(255,255,255,0.1); }
+        #timer-progress { height: 100%; width: 100%; background-color: var(--green); transition: width 1s linear, background-color 0.5s; border-radius: 5px; }
+
+        #multiple-choice-container { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 1001; display: flex; flex-direction: column; gap: 10px; width: 90%; max-width: 400px; }
+        .choice-btn { padding: 15px; background: rgba(22, 33, 62, 0.9); border: 1px solid rgba(255, 255, 255, 0.2); color: var(--text-color); border-radius: 12px; cursor: pointer; font-size: 1.1em; transition: all 0.3s; }
+        .choice-btn:not(.disabled):hover { background: var(--blue); transform: translateY(-2px); }
+        .choice-btn.correct { background-color: var(--green); color: var(--primary-bg); border-color: var(--green); }
+        .choice-btn.incorrect { background-color: var(--red); color: white; border-color: var(--red); }
+        .choice-btn.disabled { cursor: not-allowed; opacity: 0.7; }
+
+        #result-map-container { width: 100%; height: 250px; border-radius: 10px; margin-top: 20px; border: 2px solid var(--accent-color); overflow: hidden; }
+        #result-map { height: 100%; width: 100%; background-color: #333; }
+        #result-map .leaflet-control-container { display: none; }
+
+        .custom-marker-icon { border-radius: 50%; box-shadow: 0 4px 12px rgba(0,0,0,0.4); border: 3px solid white; width: 20px !important; height: 20px !important; }
+        .user-guess-icon { background-color: var(--highlight-color); }
+        .correct-answer-icon { background-color: var(--green); }
+        .round-marker-icon { background-color: var(--blue); animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(83, 114, 240, 0.7); } 70% { box-shadow: 0 0 0 15px rgba(83, 114, 240, 0); } 100% { box-shadow: 0 0 0 0 rgba(83, 114, 240, 0); } }
+
+        #watermark {
+            position: fixed;
+            bottom: 15px;
+            right: 20px;
+            z-index: 9999;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-color);
+            opacity: 0.7;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            background: rgba(22, 33, 62, 0.7);
+            padding: 8px 12px;
+            border-radius: 8px;
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        #watermark:hover {
+            opacity: 1;
+            background: var(--highlight-color);
+            color: white;
+            transform: translateY(-2px);
+        }
+
+        #leaderboard-button {
+            background: var(--blue);
+            margin-top: 10px;
+        }
+        #leaderboard-controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+        #leaderboard-controls select {
+            flex: 1;
+            padding: 8px;
+            border-radius: 8px;
+            border: 1px solid var(--accent-color);
+            background: var(--primary-bg);
+            color: var(--text-color);
+            font-family: 'Poppins', sans-serif;
+            font-size: 0.9em;
+        }
+        #leaderboard-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9em;
+        }
+        #leaderboard-table th {
+            background: var(--accent-color);
+            padding: 10px;
+            font-weight: 600;
+            text-align: center;
+        }
+        #leaderboard-table td {
+            padding: 8px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            text-align: center;
+        }
+        #leaderboard-table td:first-child {
+            text-align: left;
+        }
+        #leaderboard-table td:nth-child(2) {
+            text-align: left;
+            font-weight: 600;
+        }
+        #leaderboard-table td:nth-child(3) {
+            color: var(--green);
+            font-weight: 600;
+        }
+        #name-input-overlay input {
+            width: 100%;
+            padding: 12px;
+            font-size: 1.1em;
+            border-radius: 8px;
+            border: 2px solid var(--accent-color);
+            background: var(--primary-bg);
+            color: var(--text-color);
+            margin: 15px 0;
+            font-family: 'Poppins', sans-serif;
+        }
+        #name-input-overlay input:focus {
+            outline: none;
+            border-color: var(--blue);
+        }
+    </style>
+</head>
+<body>
+
+    <div id="map"></div>
+    <div id="multiple-choice-container"></div>
+
+    <div id="start-screen" class="overlay visible">
+        <div class="modal">
+            <h1>Geo Master</h1>
+            <p>The ultimate geography guessing game!</p>
+            <div class="instructions">
+                <strong>How to Play:</strong>
+                <ol id="instructions-list">
+                    <li>A city name will be shown.</li>
+                    <li>Click on the map where you think it is.</li>
+                    <li>The closer you are, the more points you get!</li>
+                </ol>
+            </div>
+            <strong>Select Game Mode:</strong>
+            <div id="mode-selector">
+                <button class="mode-btn active" data-mode="classic" data-instruction="<li>A city name will be shown.</li><li>Click on the map where you think it is.</li><li>The closer you are, the more points you get!</li>">Classic</button>
+                <button class="mode-btn" data-mode="clue" data-instruction="<li>A clue about a city will be shown.</li><li>Click on the map where you think it is.</li><li>The closer you are, the more points you get!</li>">Clue</button>
+                <button class="mode-btn" data-mode="reverse" data-instruction="<li>A location is pinned on the map.</li><li>Guess the correct city from four choices.</li><li>You get points for a correct guess!</li>">Reverse</button>
+            </div>
+            <strong>Select Country:</strong>
+            <div id="country-selector">
+                <button class="country-btn active" data-country="world">World</button>
+                <button class="country-btn" data-country="india">India</button>
+            </div>
+            <strong>Select Difficulty:</strong>
+            <div id="difficulty-selector">
+                <button class="difficulty-btn active" data-difficulty="easy">Easy</button>
+                <button class="difficulty-btn" data-difficulty="medium">Medium</button>
+                <button class="difficulty-btn" data-difficulty="hard">Hard</button>
+            </div>
+            <div id="time-slider-container">
+                <strong>Time per Round: <span id="time-setting-value">15s</span></strong>
+                <input type="range" id="time-slider" min="5" max="60" step="5" value="15">
+            </div>
+            <button id="start-game-button" class="game-button">Start Game</button>
+            <button id="leaderboard-button" class="game-button">🏆 Leaderboard</button>
+        </div>
+    </div>
+
+    <div id="game-ui" class="hidden">
+        <div class="stat-box">Round<br><span id="round-counter" class="value">1 / 5</span></div>
+        <div id="prompt-container">
+            <span id="prompt-label">Find:</span><br><span id="city-to-find"></span>
+            <div id="timer-container"><div id="timer-progress"></div></div>
+        </div>
+        <div class="stat-box">Score<br><span id="score" class="value">0</span></div>
+        <div class="stat-box">High Score<br><span id="high-score" class="value">0</span></div>
+    </div>
+
+    <div id="result-overlay" class="overlay">
+        <div id="result-modal" class="modal">
+            <h2 id="result-title">Excellent Guess!</h2>
+            <p id="result-text"></p>
+            <div id="result-map-container"><div id="result-map"></div></div>
+            <button id="next-round-button" class="game-button">Next Round</button>
+        </div>
+    </div>
+    
+    <div id="game-over-overlay" class="overlay">
+        <div id="game-over-modal" class="modal">
+            <h1>Game Over!</h1>
+            <p>You finished all 5 rounds.</p>
+            <h2>Final Score: <strong><span id="final-score"></span></strong></h2>
+            <p id="new-high-score-msg" style="color: var(--green); font-weight: bold; display:none;">New High Score!</p>
+            <p>High Score: <strong><span id="final-high-score"></span></strong></p>
+            <button id="play-again-button" class="game-button">Play Again</button>
+        </div>
+    </div>
+
+    <div id="name-input-overlay" class="overlay">
+        <div class="modal">
+            <h2>Congratulations!</h2>
+            <p>Enter your name to save your score:</p>
+            <input type="text" id="player-name-input" placeholder="Your Name" maxlength="20">
+            <div style="display: flex; gap: 10px;">
+                <button id="save-score-button" class="game-button" style="flex: 1;">Save Score</button>
+                <button id="skip-save-button" class="game-button" style="flex: 1; background: var(--accent-color);">Skip</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="leaderboard-overlay" class="overlay">
+        <div id="leaderboard-modal" class="modal" style="max-width: 800px; max-height: 80vh; overflow-y: auto;">
+            <h2>🏆 Leaderboard</h2>
+            <div id="leaderboard-controls">
+                <select id="leaderboard-mode-filter">
+                    <option value="all">All Modes</option>
+                    <option value="classic">Classic</option>
+                    <option value="clue">Clue</option>
+                    <option value="reverse">Reverse</option>
+                </select>
+                <select id="leaderboard-country-filter">
+                    <option value="all">All Countries</option>
+                    <option value="world">World</option>
+                    <option value="india">India</option>
+                </select>
+                <select id="leaderboard-difficulty-filter">
+                    <option value="all">All Difficulties</option>
+                    <option value="easy">Easy</option>
+                    <option value="medium">Medium</option>
+                    <option value="hard">Hard</option>
+                </select>
+            </div>
+            <div id="leaderboard-content">
+                <table id="leaderboard-table">
+                    <thead>
+                        <tr>
+                            <th>Rank</th>
+                            <th>Name</th>
+                            <th>Score</th>
+                            <th>Mode</th>
+                            <th>Country</th>
+                            <th>Difficulty</th>
+                            <th>Date</th>
+                        </tr>
+                    </thead>
+                    <tbody id="leaderboard-body">
+                    </tbody>
+                </table>
+            </div>
+            <button id="close-leaderboard-button" class="game-button" style="background: var(--accent-color);">Close</button>
+        </div>
+    </div>
+    
+    <a href="https://github.com/akshdeepsingh7/Geo-Master" target="_blank" id="watermark">
+        Geo-Master by Akshdeep Singh
+    </a>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+    <script>
+        const TOTAL_ROUNDS = 5;
+        const TILE_URL_NOLABELS = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png';
+        const TILE_URL_LABELS = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+        const TILE_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
+
+        let mainMap, resultMap, currentCity, gameMode, gameDifficulty, selectedCountry, timerInterval, highScores, roundMarker, leaderboardData;
+        let labeledTiles, noLabelTiles, gameCities = [];
+        let CITIES = {};
+        let score = 0, currentRound = 0, roundDuration = 15, timeLeft = 15;
+        let gameActive = false, resultMapLayers = [];
+        
+        const dom = {
+            startScreen: document.getElementById('start-screen'),
+            gameUI: document.getElementById('game-ui'),
+            resultOverlay: document.getElementById('result-overlay'),
+            gameOverOverlay: document.getElementById('game-over-overlay'),
+            nameInputOverlay: document.getElementById('name-input-overlay'),
+            leaderboardOverlay: document.getElementById('leaderboard-overlay'),
+            modeSelector: document.getElementById('mode-selector'),
+            countrySelector: document.getElementById('country-selector'),
+            difficultySelector: document.getElementById('difficulty-selector'),
+            timeSlider: document.getElementById('time-slider'),
+            timeSettingValue: document.getElementById('time-setting-value'),
+            startGameButton: document.getElementById('start-game-button'),
+            leaderboardButton: document.getElementById('leaderboard-button'),
+            closeLeaderboardButton: document.getElementById('close-leaderboard-button'),
+            nextRoundButton: document.getElementById('next-round-button'),
+            playAgainButton: document.getElementById('play-again-button'),
+            saveScoreButton: document.getElementById('save-score-button'),
+            skipSaveButton: document.getElementById('skip-save-button'),
+            cityToFind: document.getElementById('city-to-find'),
+            score: document.getElementById('score'),
+            highScore: document.getElementById('high-score'),
+            roundCounter: document.getElementById('round-counter'),
+            timerProgress: document.getElementById('timer-progress'),
+            promptContainer: document.getElementById('prompt-container'),
+            promptLabel: document.getElementById('prompt-label'),
+            multipleChoiceContainer: document.getElementById('multiple-choice-container'),
+            instructionsList: document.getElementById('instructions-list'),
+            playerNameInput: document.getElementById('player-name-input'),
+            leaderboardModeFilter: document.getElementById('leaderboard-mode-filter'),
+            leaderboardCountryFilter: document.getElementById('leaderboard-country-filter'),
+            leaderboardDifficultyFilter: document.getElementById('leaderboard-difficulty-filter'),
+            leaderboardBody: document.getElementById('leaderboard-body'),
+            result: {
+                title: document.getElementById('result-title'),
+                text: document.getElementById('result-text'),
+                mapContainer: document.getElementById('result-map-container')
+            },
+            gameOver: {
+                finalScore: document.getElementById('final-score'),
+                finalHighScore: document.getElementById('final-high-score'),
+                newHighScoreMsg: document.getElementById('new-high-score-msg')
+            }
+        };
+
+        const shuffle = (array) => {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        };
+
+        async function init() {
+            await loadCitiesData();
+            initMainMap();
+            loadData();
+            setupEventListeners();
+        }
+
+        async function loadCitiesData() {
+            try {
+                const response = await fetch('cities.json');
+                CITIES = await response.json();
+            } catch (error) {
+                console.error('Failed to load cities data:', error);
+                CITIES = { easy: [], medium: [], hard: [] };
+            }
+        }
+
+        function initMainMap() {
+            mainMap = L.map('map', {zoomControl: false}).setView([20, 0], 2);
+            labeledTiles = L.tileLayer(TILE_URL_LABELS, { attribution: TILE_ATTRIBUTION, minZoom: 2, maxZoom: 18 });
+            noLabelTiles = L.tileLayer(TILE_URL_NOLABELS, { attribution: TILE_ATTRIBUTION, minZoom: 2, maxZoom: 18 });
+            labeledTiles.addTo(mainMap);
+            mainMap.setMaxBounds([[-90, -180], [90, 180]]);
+        }
+
+        function initResultMap() {
+            if (resultMap) return;
+            resultMap = L.map('result-map', { zoomControl: false, scrollWheelZoom: false, dragging: false, touchZoom: false, doubleClickZoom: false, attributionControl: false });
+            L.tileLayer(TILE_URL_NOLABELS, { attribution: TILE_ATTRIBUTION }).addTo(resultMap);
+        }
+
+        function loadData() {
+            const storedScores = localStorage.getItem('geoMasterHighScores');
+            highScores = storedScores ? JSON.parse(storedScores) : { 
+                classic: { world: { easy: 0, medium: 0, hard: 0 }, india: { easy: 0, medium: 0, hard: 0 } }, 
+                clue: { world: { easy: 0, medium: 0, hard: 0 }, india: { easy: 0, medium: 0, hard: 0 } }, 
+                reverse: { world: { easy: 0, medium: 0, hard: 0 }, india: { easy: 0, medium: 0, hard: 0 } } 
+            };
+            
+            const storedLeaderboard = localStorage.getItem('geoMasterLeaderboard');
+            leaderboardData = storedLeaderboard ? JSON.parse(storedLeaderboard) : [];
+        }
+
+        function getHighScore() { 
+            return highScores[gameMode]?.[selectedCountry]?.[gameDifficulty] ?? 0; 
+        }
+
+        function setHighScore() {
+            if (score > getHighScore()) {
+                if (!highScores[gameMode]) highScores[gameMode] = {};
+                if (!highScores[gameMode][selectedCountry]) highScores[gameMode][selectedCountry] = {};
+                highScores[gameMode][selectedCountry][gameDifficulty] = score;
+                localStorage.setItem('geoMasterHighScores', JSON.stringify(highScores));
+                return true;
+            }
+            return false;
+        }
+
+        function saveToLeaderboard(name) {
+            const entry = {
+                name: name,
+                score: score,
+                mode: gameMode,
+                country: selectedCountry,
+                difficulty: gameDifficulty,
+                timestamp: Date.now(),
+                date: new Date().toLocaleDateString()
+            };
+            leaderboardData.push(entry);
+            leaderboardData.sort((a, b) => b.score - a.score);
+            leaderboardData = leaderboardData.slice(0, 50);
+            localStorage.setItem('geoMasterLeaderboard', JSON.stringify(leaderboardData));
+        }
+
+        function displayLeaderboard() {
+            const modeFilter = dom.leaderboardModeFilter.value;
+            const countryFilter = dom.leaderboardCountryFilter.value;
+            const difficultyFilter = dom.leaderboardDifficultyFilter.value;
+            
+            let filteredData = leaderboardData;
+            
+            if (modeFilter !== 'all') {
+                filteredData = filteredData.filter(entry => entry.mode === modeFilter);
+            }
+            if (countryFilter !== 'all') {
+                filteredData = filteredData.filter(entry => entry.country === countryFilter);
+            }
+            if (difficultyFilter !== 'all') {
+                filteredData = filteredData.filter(entry => entry.difficulty === difficultyFilter);
+            }
+            
+            dom.leaderboardBody.innerHTML = '';
+            
+            filteredData.slice(0, 20).forEach((entry, index) => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${index + 1}</td>
+                    <td>${entry.name}</td>
+                    <td>${entry.score.toLocaleString()}</td>
+                    <td style="text-transform: capitalize;">${entry.mode}</td>
+                    <td style="text-transform: capitalize;">${entry.country}</td>
+                    <td style="text-transform: capitalize;">${entry.difficulty}</td>
+                    <td>${entry.date}</td>
+                `;
+                dom.leaderboardBody.appendChild(row);
+            });
+            
+            if (filteredData.length === 0) {
+                dom.leaderboardBody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; opacity: 0.7;">No scores yet. Play a game to set a high score!</td></tr>';
+            }
+        }
+
+        function setupEventListeners() {
+            dom.modeSelector.addEventListener('click', (e) => {
+                if (e.target.classList.contains('mode-btn')) {
+                    document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active'));
+                    e.target.classList.add('active');
+                    dom.instructionsList.innerHTML = e.target.dataset.instruction;
+                }
+            });
+            
+            dom.countrySelector.addEventListener('click', (e) => {
+                if (e.target.classList.contains('country-btn')) {
+                    document.querySelectorAll('.country-btn').forEach(btn => btn.classList.remove('active'));
+                    e.target.classList.add('active');
+                }
+            });
+            
+            dom.difficultySelector.addEventListener('click', (e) => {
+                if (e.target.classList.contains('difficulty-btn')) {
+                    document.querySelectorAll('.difficulty-btn').forEach(btn => btn.classList.remove('active'));
+                    e.target.classList.add('active');
+                }
+            });
+            
+            dom.timeSlider.addEventListener('input', () => { 
+                dom.timeSettingValue.textContent = `${dom.timeSlider.value}s`; 
+            });
+            
+            dom.startGameButton.addEventListener('click', startGame);
+            dom.nextRoundButton.addEventListener('click', startRound);
+            dom.playAgainButton.addEventListener('click', () => {
+                dom.gameOverOverlay.classList.remove('visible');
+                dom.startScreen.classList.add('visible');
+            });
+            
+            mainMap.on('click', handleMapClick);
+            dom.multipleChoiceContainer.addEventListener('click', handleChoiceClick);
+            
+            dom.leaderboardButton.addEventListener('click', () => {
+                displayLeaderboard();
+                dom.leaderboardOverlay.classList.add('visible');
+            });
+            dom.closeLeaderboardButton.addEventListener('click', () => {
+                dom.leaderboardOverlay.classList.remove('visible');
+            });
+            
+            dom.saveScoreButton.addEventListener('click', () => {
+                const name = dom.playerNameInput.value.trim();
+                if (name) {
+                    saveToLeaderboard(name);
+                    dom.nameInputOverlay.classList.remove('visible');
+                    dom.gameOverOverlay.classList.add('visible');
+                    dom.playerNameInput.value = '';
+                }
+            });
+            dom.skipSaveButton.addEventListener('click', () => {
+                dom.nameInputOverlay.classList.remove('visible');
+                dom.gameOverOverlay.classList.add('visible');
+                dom.playerNameInput.value = '';
+            });
+            
+            dom.leaderboardModeFilter.addEventListener('change', displayLeaderboard);
+            dom.leaderboardCountryFilter.addEventListener('change', displayLeaderboard);
+            dom.leaderboardDifficultyFilter.addEventListener('change', displayLeaderboard);
+        }
+
+        function startGame() {
+            gameMode = document.querySelector('.mode-btn.active').dataset.mode;
+            gameDifficulty = document.querySelector('.difficulty-btn.active').dataset.difficulty;
+            selectedCountry = document.querySelector('.country-btn.active').dataset.country;
+            roundDuration = parseInt(dom.timeSlider.value, 10);
+            score = 0; currentRound = 0;
+            
+            if (selectedCountry === 'india') {
+                gameCities = shuffle([...CITIES[gameDifficulty]].filter(city => city.isIndian));
+                if (gameCities.length === 0) gameCities = shuffle([...CITIES[gameDifficulty]]);
+            } else {
+                gameCities = shuffle([...CITIES[gameDifficulty]]);
+            }
+
+            dom.score.textContent = 0;
+            dom.highScore.textContent = getHighScore().toLocaleString();
+            dom.startScreen.classList.remove('visible');
+            dom.gameUI.classList.remove('hidden');
+            startRound();
+        }
+        
+        function startRound() {
+            resetRoundUI();
+            gameActive = true;
+            currentRound++;
+
+            if (gameCities.length === 0) {
+                if (selectedCountry === 'india') {
+                    gameCities = shuffle([...CITIES[gameDifficulty]].filter(city => city.isIndian));
+                    if (gameCities.length === 0) gameCities = shuffle([...CITIES[gameDifficulty]]);
+                } else {
+                    gameCities = shuffle([...CITIES[gameDifficulty]]);
+                }
+            }
+            
+            currentCity = gameCities.pop();
+
+            dom.roundCounter.textContent = `${currentRound} / ${TOTAL_ROUNDS}`;
+            dom.promptContainer.style.animation = 'none';
+            dom.promptContainer.offsetHeight;
+            dom.promptContainer.style.animation = '';
+            
+            timeLeft = roundDuration;
+            timerInterval = setInterval(updateTimer, 1000);
+            updateTimerDisplay();
+            
+            if (gameMode === 'reverse') setupReverseRound();
+            else setupClassicOrClueRound();
+        }
+
+        function setupClassicOrClueRound() {
+            if (mainMap.hasLayer(noLabelTiles)) mainMap.removeLayer(noLabelTiles);
+            if (!mainMap.hasLayer(labeledTiles)) labeledTiles.addTo(mainMap);
+
+            dom.promptLabel.textContent = "Find:";
+            dom.cityToFind.style.display = 'inline';
+            
+            if (gameMode === 'clue') {
+                dom.cityToFind.textContent = currentCity.clue || currentCity.name;
+                dom.promptContainer.classList.add('clue-mode');
+            } else {
+                dom.cityToFind.textContent = currentCity.name;
+                dom.promptContainer.classList.remove('clue-mode');
+            }
+            mainMap.setView([20, 0], 2, {animate: true});
+        }
+
+        function setupReverseRound() {
+            if (mainMap.hasLayer(labeledTiles)) mainMap.removeLayer(labeledTiles);
+            if (!mainMap.hasLayer(noLabelTiles)) noLabelTiles.addTo(mainMap);
+            
+            dom.promptLabel.textContent = "Guess the City";
+            dom.cityToFind.style.display = 'none';
+            dom.promptContainer.classList.remove('clue-mode');
+            
+            generateMultipleChoices();
+            const markerIcon = L.divIcon({ className: 'custom-marker-icon round-marker-icon' });
+            roundMarker = L.marker([currentCity.lat, currentCity.lon], { icon: markerIcon }).addTo(mainMap);
+            mainMap.setView([currentCity.lat, currentCity.lon], 5, { animate: true });
+        }
+
+        function handleMapClick(e) {
+            if (!gameActive || (gameMode !== 'classic' && gameMode !== 'clue')) return;
+            endRound({ guess: e.latlng });
+        }
+
+        function handleChoiceClick(e) {
+            if (!gameActive || gameMode !== 'reverse' || !e.target.classList.contains('choice-btn')) return;
+            const chosenButton = e.target;
+            
+            document.querySelectorAll('.choice-btn').forEach(btn => {
+                btn.classList.add('disabled');
+                if(btn.dataset.correct === 'true') btn.classList.add('correct');
+            });
+            if(chosenButton.dataset.correct !== 'true') chosenButton.classList.add('incorrect');
+            
+            endRound({ choice: chosenButton.dataset.name });
+        }
+
+        function endRound(result) {
+            if (!gameActive) return;
+            gameActive = false;
+            clearInterval(timerInterval);
+
+            let roundScore = 0, distance = 0, isCorrect = false;
+
+            if (gameMode === 'reverse') {
+                isCorrect = result.choice === currentCity.name;
+                if(isCorrect) roundScore = 5000;
+            } else {
+                const actualLatLng = L.latLng(currentCity.lat, currentCity.lon);
+                if (result.guess) {
+                    distance = Math.round(actualLatLng.distanceTo(result.guess) / 1000);
+                    roundScore = Math.max(0, Math.round(5000 * Math.exp(-distance / 2000)));
+                }
+            }
+            
+            score += roundScore;
+            dom.score.textContent = score.toLocaleString();
+            
+            setTimeout(() => {
+                if (currentRound >= TOTAL_ROUNDS) endGame();
+                else showResultModal(result, distance, roundScore);
+            }, gameMode === 'reverse' ? 1200 : 0);
+        }
+
+        function endGame() {
+            dom.gameUI.classList.add('hidden');
+            dom.gameOver.finalScore.textContent = score.toLocaleString();
+            
+            const isNewHighScore = setHighScore();
+            dom.gameOver.finalHighScore.textContent = getHighScore().toLocaleString();
+            dom.gameOver.newHighScoreMsg.style.display = isNewHighScore ? 'block' : 'none';
+            
+            if (score > 0) {
+                dom.nameInputOverlay.classList.add('visible');
+                dom.playerNameInput.focus();
+            } else {
+                dom.gameOverOverlay.classList.add('visible');
+            }
+        }
+
+        function resetRoundUI() {
+            dom.resultOverlay.classList.remove('visible');
+            dom.multipleChoiceContainer.innerHTML = '';
+            if (roundMarker) {
+                mainMap.removeLayer(roundMarker);
+                roundMarker = null;
+            }
+        }
+
+        function updateTimer() {
+            timeLeft--;
+            updateTimerDisplay();
+            if (timeLeft <= 0) {
+                if (gameMode === 'reverse') document.querySelectorAll('.choice-btn').forEach(btn => btn.classList.add('disabled'));
+                endRound({ guess: null, choice: null });
+            }
+        }
+
+        function updateTimerDisplay() {
+            const percentage = (timeLeft / roundDuration) * 100;
+            dom.timerProgress.style.width = `${percentage}%`;
+            dom.timerProgress.style.backgroundColor = timeLeft <= (roundDuration * 0.33) ? 'var(--red)' : timeLeft <= (roundDuration * 0.66) ? 'var(--yellow)' : 'var(--green)';
+        }
+
+        function showResultModal(result, distance, roundScore) {
+            dom.result.mapContainer.style.display = 'none';
+
+            if(gameMode === 'reverse') {
+                dom.result.mapContainer.style.display = 'block';
+                 if (result.choice && result.choice === currentCity.name) {
+                    dom.result.title.textContent = "Correct!";
+                    dom.result.text.innerHTML = `You earned <strong>+${roundScore.toLocaleString()} points!</strong>`;
+                 } else if (result.choice) {
+                    dom.result.title.textContent = "Incorrect!";
+                    dom.result.text.innerHTML = `The correct city was <strong>${currentCity.name}</strong>.`;
+                 } else {
+                    dom.result.title.textContent = "Time's Up!";
+                    dom.result.text.innerHTML = `The correct city was <strong>${currentCity.name}</strong>.`;
+                 }
+            } else {
+                dom.result.mapContainer.style.display = 'block';
+                if (result.guess) {
+                    dom.result.title.textContent = roundScore > 4500 ? "Pinpoint Accuracy!" : roundScore > 3500 ? "Excellent Guess!" : "Not Bad!";
+                    const clueText = gameMode === 'clue' ? `For clue: "${currentCity.clue || currentCity.name}"<br>` : '';
+                    dom.result.text.innerHTML = `${clueText}You were <strong>${distance.toLocaleString()} km</strong> from <strong>${currentCity.name}</strong> and scored <strong>+${roundScore.toLocaleString()} points!</strong>`;
+                } else {
+                    dom.result.title.textContent = "Time's Up!";
+                    dom.result.text.innerHTML = `The correct location of "${currentCity.clue || currentCity.name}" was <strong>${currentCity.name}</strong>.`;
+                }
+            }
+            
+            dom.resultOverlay.classList.add('visible');
+
+            setTimeout(() => {
+                initResultMap();
+                resultMapLayers.forEach(layer => resultMap.removeLayer(layer));
+                resultMapLayers = [];
+
+                const actualLatLng = L.latLng(currentCity.lat, currentCity.lon);
+                const correctIcon = L.divIcon({ className: 'custom-marker-icon correct-answer-icon' });
+                const correctMarker = L.marker(actualLatLng, { icon: correctIcon }).addTo(resultMap);
+                resultMapLayers.push(correctMarker);
+                
+                let boundsGroup = [correctMarker];
+
+                if(gameMode !== 'reverse' && result.guess) {
+                    const guessIcon = L.divIcon({ className: 'custom-marker-icon user-guess-icon' });
+                    const guessedMarker = L.marker(result.guess, { icon: guessIcon }).addTo(resultMap);
+                    resultMapLayers.push(guessedMarker);
+                    boundsGroup.push(guessedMarker);
+                    const line = L.polyline([actualLatLng, result.guess], { color: 'white', weight: 3, opacity: 0.9 }).addTo(resultMap);
+                    resultMapLayers.push(line);
+                }
+                
+                const group = new L.featureGroup(boundsGroup);
+                resultMap.fitBounds(group.getBounds().pad(0.25));
+            }, 10);
+        }
+
+        function generateMultipleChoices() {
+            let cityPool = [];
+            if (selectedCountry === 'india') {
+                cityPool = CITIES[gameDifficulty].filter(c => c.isIndian && c.name !== currentCity.name);
+            } else {
+                cityPool = CITIES[gameDifficulty].filter(c => c.name !== currentCity.name);
+            }
+            
+            let choices = [currentCity, ...shuffle(cityPool).slice(0, 3)];
+            
+            shuffle(choices).forEach(city => {
+                const button = document.createElement('button');
+                button.className = 'choice-btn';
+                button.textContent = city.name;
+                button.dataset.name = city.name;
+                if(city.name === currentCity.name) button.dataset.correct = "true";
+                dom.multipleChoiceContainer.appendChild(button);
+            });
+        }
+        
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
